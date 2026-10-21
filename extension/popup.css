@@ -1,4 +1,5 @@
 body {
+  box-sizing: border-box;
   width: 240px;
   margin: 0;
   padding: 16px;

@@ -1,7 +1,7 @@
 ---
 description: Trova la causa di un bug e applica la correzione più piccola
 mode: primary
-model: opencode/deepseek-v4.1-flash-free
+model: opencode/minimax-m3.1-flash-free
 temperature: 0.1
 steps: 30
 permission:

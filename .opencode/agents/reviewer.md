@@ -1,7 +1,7 @@
 ---
 description: Rivede le modifiche in sola lettura e produce un rapporto
 mode: primary
-model: opencode/mimo-v2.6-flash-free
+model: opencode/minimax-m3.1-flash-free
 temperature: 0.1
 steps: 20
 permission:

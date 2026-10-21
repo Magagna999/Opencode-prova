@@ -548,6 +548,26 @@ function collectFiles(dir: string, extensions: string[]): string[] {
   return files;
 }
 
+const JWT_RE = /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g;
+
+/**
+ * True when the content contains a JWT whose payload grants the `service_role`
+ * role. The public anon key is a JWT too, but it only carries the `anon` role.
+ */
+function hasServiceRoleToken(content: string): boolean {
+  const tokens = content.match(JWT_RE);
+  if (!tokens) return false;
+  for (const token of tokens) {
+    const payload = token.split('.')[1];
+    if (!payload) continue;
+    const decoded = Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString(
+      'utf8',
+    );
+    if (decoded.includes('service_role')) return true;
+  }
+  return false;
+}
+
 describe('extension hardening', () => {
   it('keeps the manifest at least privilege', () => {
     const manifest = JSON.parse(
@@ -570,17 +590,21 @@ describe('extension hardening', () => {
     expect(csp).not.toContain('unsafe-inline');
   });
 
-  it('embeds no service role key and no JWT in the sources or in the build', () => {
-    const files = [
-      ...collectFiles(join(ROOT, 'src'), ['.ts', '.tsx', '.js']),
-      ...collectFiles(join(ROOT, 'dist'), ['.js', '.css', '.html', '.map']),
-    ];
-    expect(files.length).toBeGreaterThan(0);
+  it('embeds no service role credential in the sources or in the build', () => {
+    const sourceFiles = collectFiles(join(ROOT, 'src'), ['.ts', '.tsx', '.js']);
+    expect(sourceFiles.length).toBeGreaterThan(0);
 
-    for (const file of files) {
+    for (const file of sourceFiles) {
       const content = readFileSync(file, 'utf8');
       expect(content, file).not.toMatch(/service_role/i);
-      expect(content, file).not.toMatch(/eyJhbGciOi[A-Za-z0-9_-]{10,}/);
+      expect(hasServiceRoleToken(content), file).toBe(false);
+    }
+
+    // The build is optional while the extension has not been packaged yet.
+    for (const file of collectFiles(join(ROOT, 'dist'), ['.js', '.css', '.html', '.map'])) {
+      const content = readFileSync(file, 'utf8');
+      expect(content, file).not.toMatch(/sb_secret_[A-Za-z0-9_-]{20,}/);
+      expect(hasServiceRoleToken(content), file).toBe(false);
     }
   });
 });

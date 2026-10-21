@@ -1,0 +1,20 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "opencode/deepseek-v4.1-flash-free",
+  "small_model": "opencode/deepseek-v4.1-flash-free",
+  "autoupdate": false,
+  "snapshot": false,
+  "enabled_providers": ["opencode"],
+  "subagent_depth": 0,
+  "permission": {
+    "external_directory": "deny",
+    "bash": {
+      "*": "allow",
+      "git push*": "deny",
+      "git remote*": "deny",
+      "rm -rf*": "deny",
+      "curl *": "deny",
+      "wget *": "deny"
+    }
+  }
+}

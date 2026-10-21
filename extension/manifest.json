@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Popup di prova",
+  "version": "0.1.0",
+  "description": "Estensione di prova: un clic sull'icona apre una popup.",
+  "action": {
+    "default_title": "Apri la popup di prova",
+    "default_popup": "popup.html"
+  }
+}

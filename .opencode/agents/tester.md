@@ -1,7 +1,7 @@
 ---
 description: Scrive ed esegue test, senza toccare il codice di produzione
 mode: primary
-model: opencode/big-pickle
+model: opencode/minimax-m3.1-flash-free
 temperature: 0.1
 steps: 25
 permission:

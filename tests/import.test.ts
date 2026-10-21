@@ -18,13 +18,7 @@ import { AppError, isAppError } from '@/utils/errors';
 
 const ISO = '2024-01-01T00:00:00Z';
 
-function data(
-  name: string,
-  url: string,
-  username: string,
-  password: string,
-  note = '',
-): CredentialData {
+function data(name: string, url: string, username: string, password: string, note = ''): CredentialData {
   return { name, url, username, password, note };
 }
 
@@ -121,26 +115,20 @@ describe('Chrome CSV import', () => {
     expect(result.recognizedFields).toEqual(['name', 'url', 'username', 'password', 'note']);
     expect(result.invalid).toHaveLength(0);
     expect(result.valid.map((v) => v.line)).toEqual([2, 3]);
-    expect(result.valid[0]?.data).toEqual(
-      data('GitHub', 'https://github.com', 'octocat', 'pw1', 'work'),
-    );
+    expect(result.valid[0]?.data).toEqual(data('GitHub', 'https://github.com', 'octocat', 'pw1', 'work'));
     expect(result.valid[1]?.data).toEqual(data('Example', 'https://example.com', 'user2', 'pw2', ''));
   });
 
   // Case 2: four columns and header aliases / mixed case.
   it('accepts four columns without note and recognizes header aliases', () => {
-    const csv = ['Title,login_uri,user,pass', 'My Site,https://alias.example,alice,secret'].join(
-      '\n',
-    );
+    const csv = ['Title,login_uri,user,pass', 'My Site,https://alias.example,alice,secret'].join('\n');
 
     const result = parseChromeCsv(csv);
 
     expect(result.invalid).toHaveLength(0);
     expect(result.recognizedFields).toEqual(['name', 'url', 'username', 'password']);
     expect(result.valid).toHaveLength(1);
-    expect(result.valid[0]?.data).toEqual(
-      data('My Site', 'https://alias.example', 'alice', 'secret', ''),
-    );
+    expect(result.valid[0]?.data).toEqual(data('My Site', 'https://alias.example', 'alice', 'secret', ''));
   });
 
   // Case 3: semicolon and tab delimiters, commas inside quoted fields.
@@ -342,12 +330,11 @@ describe('import plan', () => {
 
   // Case 11: policies, identical rows and per-line overrides.
   it('applies skip / replace / keep-both policies', () => {
-    const policyCases: { policy: DuplicatePolicy; inserts: number; replaces: number; skipped: number }[] =
-      [
-        { policy: 'skip', inserts: 1, replaces: 0, skipped: 4 },
-        { policy: 'replace', inserts: 2, replaces: 1, skipped: 2 },
-        { policy: 'keep-both', inserts: 3, replaces: 0, skipped: 2 },
-      ];
+    const policyCases: { policy: DuplicatePolicy; inserts: number; replaces: number; skipped: number }[] = [
+      { policy: 'skip', inserts: 1, replaces: 0, skipped: 4 },
+      { policy: 'replace', inserts: 2, replaces: 1, skipped: 2 },
+      { policy: 'keep-both', inserts: 3, replaces: 0, skipped: 2 },
+    ];
 
     for (const c of policyCases) {
       const plan = buildPlan(rows, c.policy);
@@ -444,13 +431,7 @@ describe('CSV round trip', () => {
   // Case 13: exportPlainCsv -> parseChromeCsv.
   it('preserves commas, quotes, newlines and Unicode through export and import', () => {
     const credentials = [
-      data(
-        'Acme, "Inc"',
-        'https://example.com/a,b',
-        '用户🚀',
-        'p,a"s\nline2',
-        'line one\nline two',
-      ),
+      data('Acme, "Inc"', 'https://example.com/a,b', '用户🚀', 'p,a"s\nline2', 'line one\nline two'),
       data('مرحبا', 'https://example.org', 'bob', '  spaced  ', 'quote " and comma,'),
     ];
 

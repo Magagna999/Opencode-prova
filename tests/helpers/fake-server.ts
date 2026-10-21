@@ -56,7 +56,8 @@ export class FakeServer {
         this.received.push(w);
         const r = this.rows.get(w.id);
         if (!r || r.user_id !== userId) throw new AppError('NOT_FOUND', 'The credential no longer exists.');
-        if (r.revision !== expectedRevision) throw new AppError('CONFLICT', 'The credential was modified elsewhere.');
+        if (r.revision !== expectedRevision)
+          throw new AppError('CONFLICT', 'The credential was modified elsewhere.');
         const next: CredentialRow = {
           ...r,
           ciphertext: w.ciphertext,
@@ -72,7 +73,8 @@ export class FakeServer {
         this.maybeFail();
         const r = this.rows.get(id);
         if (!r || r.user_id !== userId) return;
-        if (r.revision !== expectedRevision) throw new AppError('CONFLICT', 'The credential was modified elsewhere.');
+        if (r.revision !== expectedRevision)
+          throw new AppError('CONFLICT', 'The credential was modified elsewhere.');
         this.rows.delete(id);
       },
     };

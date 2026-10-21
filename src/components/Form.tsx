@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import type { Credential, CredentialData } from '@/types';
 import type { UpdateResult } from '@/services/sync/sync';
 import { emptyCredentialData, validateCredentialData } from '@/utils/validation';
@@ -9,7 +9,7 @@ import { Field, Notice } from './common';
 export function CredentialForm(props: {
   existing: Credential | null;
   onCancel: () => void;
-  onCreate: (d: CredentialData) => Promise<void>;
+  onCreate: (d: CredentialData, id: string) => Promise<void>;
   onUpdate: (d: CredentialData) => Promise<UpdateResult>;
   onKeepMine: (d: CredentialData, serverRevision: number) => Promise<UpdateResult>;
   onUseServer: () => Promise<void>;
@@ -26,6 +26,7 @@ export function CredentialForm(props: {
         }
       : emptyCredentialData(),
   );
+  const newId = useRef(crypto.randomUUID()); // stable per form: a double submit cannot create two rows
   const [showPw, setShowPw] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +41,7 @@ export function CredentialForm(props: {
     setBusy(true);
     setError(null);
     try {
-      if (!props.existing) await props.onCreate(data);
+      if (!props.existing) await props.onCreate(data, newId.current);
       else {
         const r = await props.onUpdate(data);
         if (!r.ok) {

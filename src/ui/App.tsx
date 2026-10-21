@@ -219,8 +219,8 @@ export function App({ mode }: { mode: 'popup' | 'options' }) {
               setCredentials(sync.list());
               back();
             }}
-            onCreate={async (d: CredentialData) => {
-              await sync.create(d);
+            onCreate={async (d: CredentialData, id: string) => {
+              await sync.create(d, id);
             }}
             onUpdate={(d) => sync.update((current as Credential).id, d)}
             onKeepMine={(d, rev) => sync.overwriteWithMine((current as Credential).id, d, rev)}

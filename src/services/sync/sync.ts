@@ -90,9 +90,9 @@ export class SyncService {
     });
   }
 
-  async create(data: CredentialData): Promise<Credential> {
+  /** `id` is an idempotency key: repeating the call with the same id never creates a second row. */
+  async create(data: CredentialData, id: string = crypto.randomUUID()): Promise<Credential> {
     assertValidCredentialData(data);
-    const id = crypto.randomUUID();
     return this.once(`create:${id}`, id, () =>
       this.track(async () => {
         const key = this.deps.getKey();

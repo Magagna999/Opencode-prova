@@ -1,9 +1,9 @@
 /**
  * Tests for the client-side cryptographic layer (`src/services/crypto/`).
  *
- * Every test uses the minimum allowed PBKDF2 iteration count (100_000) to keep
- * the suite fast. No secret is ever written to the console or asserted in
- * clear text: the checks below only look for the *absence* of plaintext.
+ * Every test uses the minimum allowed PBKDF2 iteration count (100_000) to
+ * keep the suite fast. No secret is ever logged or asserted in clear text:
+ * the checks below only look for the *absence* of plaintext.
  */
 import { describe, expect, it } from 'vitest';
 import type { CredentialData, CredentialRow, EncryptedWrite } from '@/types';
@@ -28,17 +28,23 @@ const USER_A = 'user-a';
 const USER_B = 'user-b';
 const ISO = '2024-01-01T00:00:00.000Z';
 
-/** Master password: the '-', '!' and digits make it impossible to appear in base64 output. */
+/**
+ * Master password. The '-', '!' and digits are not part of the base64
+ * alphabet, so the password can never show up inside an encoded payload.
+ */
 const MASTER = 'M4ster-Passw0rd!-a1b2';
-/** Sentinel plaintext used to prove that it never leaks into ciphertexts or errors. */
+/** Sentinel plaintext used to prove that it never leaks into ciphertexts. */
 const SENTINEL = 'pl4intext-S3cret-Ω-9f2a';
+const USERNAME = 'user-name-Ω-42';
+const PASSWORD = 'S3cret!Pass-9f2a';
+const INVALID_ITERATIONS = [0, 1_000, MIN_ITERATIONS - 1, 10_000_001, 100_000.5];
 
 function credentialData(overrides: Partial<CredentialData> = {}): CredentialData {
   return {
     name: 'Example Site',
     url: 'https://example.com',
     username: 'alice@example.com',
-    password: 'S3cret!Pass-9f2a',
+    password: PASSWORD,
     note: '',
     ...overrides,
   };
@@ -97,31 +103,35 @@ describe('encryptJson / decryptJson round trip', () => {
     expect(restored).toEqual(payload);
     expect(restored.empty).toBe('');
     expect(restored.emoji).toBe('🔐🚀🧊');
+    expect(restored.chinese).toBe('密码管理器');
   });
 });
 
 describe('vault creation and unlocking', () => {
   // Case 2: a wrong password is rejected with WRONG_PASSWORD, the right one works.
-  it('rejects a wrong master password with WRONG_PASSWORD and unlocks with the right one', async () => {
+  it('rejects a wrong master password with WRONG_PASSWORD', async () => {
     const { meta, key } = await createVault(MASTER, USER_A, ITERATIONS);
 
-    const wrong = await captureError(() => unlockVault('totally-wrong-password', USER_A, meta));
+    const wrong = await captureError(() =>
+      unlockVault('totally-wrong-password', USER_A, meta),
+    );
     expect(wrong.code).toBe('WRONG_PASSWORD');
     expect(wrong.message).not.toContain(MASTER);
 
+    // The right password returns a key that decrypts a record encrypted
+    // with the key returned by createVault.
     const unlocked = await unlockVault(MASTER, USER_A, meta);
     expect(unlocked.algorithm.name).toBe('AES-GCM');
     expect(unlocked.extractable).toBe(false);
 
-    // The unlocked key decrypts a record that was encrypted with createVault's key.
     const write = await encryptCredential(key, USER_A, 'rec-unlock', credentialData());
     const credential = await decryptCredential(unlocked, USER_A, toRow(write, USER_A));
     expect(credential.id).toBe('rec-unlock');
-    expect(credential.password).toBe('S3cret!Pass-9f2a');
+    expect(credential.password).toBe(PASSWORD);
   });
 
-  // Case 3: a key derived from another password cannot decrypt, and the error leaks nothing.
-  it('fails with CRYPTO for a key derived from a different password without leaking plaintext', async () => {
+  // Case 3: a key derived from another password cannot decrypt, the error leaks nothing.
+  it('fails with CRYPTO for a key derived from a different password', async () => {
     const salt = generateSalt();
     const keyA = await deriveKey('password-alpha', salt, ITERATIONS);
     const keyB = await deriveKey('password-beta', salt, ITERATIONS);
@@ -138,11 +148,12 @@ describe('vault creation and unlocking', () => {
 
 describe('tamper detection', () => {
   // Case 4: modified ciphertext, modified IV and truncated ciphertext all fail.
-  it('rejects a modified ciphertext, a modified IV and a truncated ciphertext', async () => {
+  it('rejects a modified ciphertext, a modified IV and a truncated one', async () => {
     const key = await deriveKey(MASTER, generateSalt(), ITERATIONS);
     const aad = buildAad(ENCRYPTION_VERSION, USER_A, 'rec-tamper');
     const sealed = await encryptJson(key, { secret: SENTINEL }, aad);
 
+    // One single byte of the ciphertext is flipped.
     const ct = Buffer.from(sealed.ciphertext, 'base64');
     expect(ct.length).toBeGreaterThan(16);
     ct[0] = (ct[0] ?? 0) ^ 0xff;
@@ -152,6 +163,7 @@ describe('tamper detection', () => {
     expect(modifiedCt.code).toBe('CRYPTO');
     expect(modifiedCt.message).not.toContain(SENTINEL);
 
+    // One single byte of the IV is flipped (the length stays valid).
     const iv = Buffer.from(sealed.iv, 'base64');
     expect(iv.length).toBe(12);
     iv[0] = (iv[0] ?? 0) ^ 0xff;
@@ -160,13 +172,14 @@ describe('tamper detection', () => {
     );
     expect(modifiedIv.code).toBe('CRYPTO');
 
+    // The ciphertext is truncated.
     const truncated = Buffer.from(sealed.ciphertext, 'base64').subarray(0, 20);
     const truncatedError = await captureError(() =>
       decryptJson(key, { ciphertext: truncated.toString('base64'), iv: sealed.iv }, aad),
     );
     expect(truncatedError.code).toBe('CRYPTO');
 
-    // A ciphertext that is not valid base64 must not throw a raw error either.
+    // A ciphertext that is not valid base64 must not leak a raw error either.
     const invalidBase64 = await captureError(() =>
       decryptJson(key, { ciphertext: 'not base64!!', iv: sealed.iv }, aad),
     );
@@ -190,18 +203,31 @@ describe('tamper detection', () => {
     expect(otherRecord.code).toBe('CRYPTO');
 
     // Same ciphertext, different user.
-    const otherUser = await captureError(() => decryptCredential(keyA, USER_B, row));
+    const otherUser = await captureError(() =>
+      decryptCredential(keyA, USER_B, row),
+    );
     expect(otherUser.code).toBe('CRYPTO');
 
-    // Swapping the ciphertext of two records breaks decryption.
-    const other = await encryptCredential(keyA, USER_A, 'rec-b', credentialData({ password: 'other-secret' }));
+    // The ciphertext of another record is swapped into this row.
+    const other = await encryptCredential(
+      keyA,
+      USER_A,
+      'rec-b',
+      credentialData({ password: 'other-secret' }),
+    );
     const swapped = await captureError(() =>
-      decryptCredential(keyA, USER_A, { ...row, ciphertext: other.ciphertext, iv: other.iv }),
+      decryptCredential(keyA, USER_A, {
+        ...row,
+        ciphertext: other.ciphertext,
+        iv: other.iv,
+      }),
     );
     expect(swapped.code).toBe('CRYPTO');
 
     // A key from another vault cannot read the row either.
-    const otherKey = await captureError(() => decryptCredential(keyB, USER_A, row));
+    const otherKey = await captureError(() =>
+      decryptCredential(keyB, USER_A, row),
+    );
     expect(otherKey.code).toBe('CRYPTO');
   });
 });
@@ -228,8 +254,16 @@ describe('nonce handling', () => {
     }
 
     // The first and the last ciphertext still decrypt to their own payload.
-    const first = await decryptJson<{ i: number }>(key, { ciphertext: ciphertexts[0] ?? '', iv: ivs[0] ?? '' }, aad);
-    const last = await decryptJson<{ i: number }>(key, { ciphertext: ciphertexts[499] ?? '', iv: ivs[499] ?? '' }, aad);
+    const first = await decryptJson<{ i: number }>(
+      key,
+      { ciphertext: ciphertexts[0] ?? '', iv: ivs[0] ?? '' },
+      aad,
+    );
+    const last = await decryptJson<{ i: number }>(
+      key,
+      { ciphertext: ciphertexts[499] ?? '', iv: ivs[499] ?? '' },
+      aad,
+    );
     expect(first.i).toBe(0);
     expect(last.i).toBe(499);
   });
@@ -245,7 +279,7 @@ describe('vault parameters', () => {
     expect(Buffer.from(first.meta.salt, 'base64').length).toBe(16);
     expect(Buffer.from(second.meta.salt, 'base64').length).toBe(16);
 
-    // The verifier of the first vault cannot be opened with the key of the second one.
+    // The verifier of the first vault cannot be opened with the key of the second.
     const verifierError = await captureError(() =>
       decryptBytes(
         second.key,
@@ -255,8 +289,13 @@ describe('vault parameters', () => {
     );
     expect(verifierError.code).toBe('CRYPTO');
 
-    // A credential of the first vault cannot be read with the key of the second one.
-    const write = await encryptCredential(first.key, USER_A, 'rec-salt', credentialData());
+    // A credential of the first vault cannot be read with the key of the second.
+    const write = await encryptCredential(
+      first.key,
+      USER_A,
+      'rec-salt',
+      credentialData(),
+    );
     const credentialError = await captureError(() =>
       decryptCredential(second.key, USER_A, toRow(write, USER_A)),
     );
@@ -274,16 +313,11 @@ describe('vault parameters', () => {
 
     // The raw key bytes must not be reachable from a page script.
     await expect(crypto.subtle.exportKey('raw', key)).rejects.toBeDefined();
-
-    let exported: ArrayBuffer | undefined;
-    let exportFailed = false;
-    try {
-      exported = await crypto.subtle.exportKey('raw', key);
-    } catch {
-      exportFailed = true;
-    }
-    expect(exportFailed).toBe(true);
-    expect(exported).toBeUndefined();
+    const outcome = await crypto.subtle.exportKey('raw', key).then(
+      () => 'resolved',
+      () => 'rejected',
+    );
+    expect(outcome).toBe('rejected');
   });
 
   // Case 9: the metadata is public and never contains the master password.
@@ -314,12 +348,16 @@ describe('vault parameters', () => {
 
   // Case 10: the KDF iteration count is validated.
   it('rejects KDF iteration counts outside the allowed range', async () => {
-    for (const iterations of [0, 1_000, MIN_ITERATIONS - 1, 10_000_001, 100_000.5]) {
-      const error = await captureError(() => createVault(MASTER, USER_A, iterations));
+    for (const iterations of INVALID_ITERATIONS) {
+      const error = await captureError(() =>
+        createVault(MASTER, USER_A, iterations),
+      );
       expect(error.code).toBe('VALIDATION');
     }
 
-    const deriveError = await captureError(() => deriveKey(MASTER, generateSalt(), 1_000));
+    const deriveError = await captureError(() =>
+      deriveKey(MASTER, generateSalt(), 1_000),
+    );
     expect(deriveError.code).toBe('VALIDATION');
 
     // The minimum is accepted.
@@ -360,20 +398,29 @@ describe('password normalization', () => {
 
     const { meta, key } = await createVault(composed, USER_A, ITERATIONS);
 
-    // The vault created with the composed password is unlocked with the decomposed one.
+    // The vault created with the composed password is unlocked with the other form.
     const unlocked = await unlockVault(decomposed, USER_A, meta);
     expect(unlocked.algorithm.name).toBe('AES-GCM');
 
     const write = await encryptCredential(key, USER_A, 'rec-nfkc', credentialData());
     const credential = await decryptCredential(unlocked, USER_A, toRow(write, USER_A));
-    expect(credential.password).toBe('S3cret!Pass-9f2a');
+    expect(credential.password).toBe(PASSWORD);
 
     // And the other way round.
     const other = await createVault(decomposed, USER_A, ITERATIONS);
     const unlockedOther = await unlockVault(composed, USER_A, other.meta);
-    const writeOther = await encryptCredential(other.key, USER_A, 'rec-nfkc', credentialData());
-    const credentialOther = await decryptCredential(unlockedOther, USER_A, toRow(writeOther, USER_A));
-    expect(credentialOther.password).toBe('S3cret!Pass-9f2a');
+    const writeOther = await encryptCredential(
+      other.key,
+      USER_A,
+      'rec-nfkc',
+      credentialData(),
+    );
+    const credentialOther = await decryptCredential(
+      unlockedOther,
+      USER_A,
+      toRow(writeOther, USER_A),
+    );
+    expect(credentialOther.password).toBe(PASSWORD);
   });
 });
 
@@ -381,7 +428,7 @@ describe('clear text leakage', () => {
   // Case 13: the encrypted write contains no plaintext.
   it('never stores the username or the password in clear text', async () => {
     const key = await deriveKey(MASTER, generateSalt(), ITERATIONS);
-    const data = credentialData({ username: 'user-name-Ω-42', password: 'S3cret!Pass-9f2a' });
+    const data = credentialData({ username: USERNAME, password: PASSWORD });
 
     const write = await encryptCredential(key, USER_A, 'rec-clear', data);
     const serialized = JSON.stringify(write);

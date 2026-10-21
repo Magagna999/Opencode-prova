@@ -1,7 +1,7 @@
 ---
 description: Scrive ed esegue test, senza toccare il codice di produzione
 mode: primary
-model: opencode/deepseek-v4.1-flash-free
+model: opencode/big-pickle
 temperature: 0.1
 steps: 25
 permission:
